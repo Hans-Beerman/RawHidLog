@@ -28,23 +28,7 @@
 #include "ABE_ADCPi.h"
 #include <features.h>
 
-#define CHECK_SYSTEM_TIME_WINDOW 480 // in minutes
-#define VOLTAGE_SAMPLE_WINDOW 5 // in secs
-#define VOLTAGE_REPORT_WINDOW 300 // in secs
-#define VOLTAGE_SHOW_IN_TERM_WINDOW 5 // in secs
-#define MINIMUM_VOLTAGE_LEVEL 4.0 // in V
-
 bool program_is_running = true;
-
-long long current_Timestamp()
-{
-    struct timeval te;
-    gettimeofday(&te, NULL);
-
-    long long milliseconds = te.tv_sec * 1000LL + te.tv_usec / 1000;
-
-    return milliseconds;
-}
 
 void setsystemdatetime(char * newdatetime)
 {
@@ -86,7 +70,6 @@ void setsystemdatetime(char * newdatetime)
 
 int main(int argc, char **argv)
 {
-	bool output_to_terminal = false;
 	int ReadRawDevice;
 	int CharsRead;
 	char Buffer[1025];
@@ -108,10 +91,14 @@ int main(int argc, char **argv)
 	double min_voltage_level = 100000.0;
 	double max_voltage_level = 0;
 	double current_voltage_level = 0.0;
-	bool skip_First_Message = true;
-	bool skip_Second_Message = true;
 
 	bool VoltageLevelError = false;
+
+	long long LastTestOproepTime = 0;
+	long long NextTestOproepTime = 0;
+	long long StartOfProgramTime = 0;
+	long long currentTime = 0;
+	long long NrOfMissedTestCalls = 0;
 
 	if (argc > 1)
 	{
@@ -122,8 +109,9 @@ int main(int argc, char **argv)
 		}
 	}
 
-	log_message("***** Init USB connection *****", true);
-	log_error_message("Init USB connection", true);
+	load_params();
+	log_message("***** Init USB connection *****", !ValidDateTime);
+	log_error_message("Init USB connection", !ValidDateTime);
 	ReadRawDevice = -1;
 	while (ReadRawDevice < 0)
 	{
@@ -138,22 +126,25 @@ int main(int argc, char **argv)
 		}
 	}
 	USBHidConnected = true;
-	log_message("***** Program Started *****", true);
-	log_error_message("Program Started", true);
+	log_message("***** Program Started *****", !ValidDateTime);
+	log_error_message("Program Started", !ValidDateTime);
 	if (output_to_terminal == true)
 	{
 		printf("Program started\n\n");
 	}
 
-	next_voltage_sample = current_Timestamp() + VOLTAGE_SAMPLE_WINDOW * 1000;
-	Next_Voltage_Report_Time = current_Timestamp() + VOLTAGE_REPORT_WINDOW * 1000;
-	Next_Voltage_Show_In_Term_Time = current_Timestamp() + VOLTAGE_SHOW_IN_TERM_WINDOW * 1000;
+	next_voltage_sample = current_Timestamp() + SampleVoltageWindow * 1000;
+	Next_Voltage_Report_Time = current_Timestamp() + ReportVoltageWindow * 1000;
+	Next_Voltage_Show_In_Term_Time = current_Timestamp() + ShowVoltageInTermWindow * 1000;
+	StartOfProgramTime = current_Timestamp();
+	NextTestOproepTime = current_Timestamp() + MAX_TIME_BETWEEN_TESTOPROEPEN * 1000;
 	while (program_is_running == true)
 	{
+		usleep(100);
 		if (stat("/dev/hidraw0", &USBHIDstat) < 0)
 		{
-			log_message("***** Error: USB connection lost! *****", false);
-			log_error_message("Error: USB connection lost!", false);
+			log_message("***** Error: USB connection lost! *****", !ValidDateTime);
+			log_error_message("Error: USB connection lost!", !ValidDateTime);
 			if (output_to_terminal == true)
 			{
 				printf("Error: USB connection lost!\n");
@@ -192,8 +183,8 @@ int main(int argc, char **argv)
 					usleep(1000000);
 				}
 			}
-			log_message("***** Solved: USB connected *****", false);
-			log_error_message("Solved: USB connected", false);
+			log_message("***** Solved: USB connected *****", !ValidDateTime);
+			log_error_message("Solved: USB connected", !ValidDateTime);
 			if (output_to_terminal == true)
 			{
 				printf("Solved: USB connected\n");
@@ -202,15 +193,6 @@ int main(int argc, char **argv)
 		LogStr[0] = 0x00;
 		CharsRead = 0;
 		CharsRead = read(ReadRawDevice, Buffer, 1024);
-		if (((skip_First_Message == true) || (skip_Second_Message == true)) && (CharsRead > 0))
-		{
-			CharsRead = 0;
-			if (skip_First_Message == false)
-			{
-				skip_Second_Message = false;
-			}
-			skip_First_Message = false;
-		}
 		if (CharsRead > 0)
 		{
 			Buffer[CharsRead] = 0x00;
@@ -235,14 +217,17 @@ int main(int argc, char **argv)
 				LogStr[j] = 0x00;
 			}
 
-			if (ChangeSystemTime == true)
+			// Check if Testoproep is received
+			if (strlen(LogStr) > 0)
 			{
-
-				// find date and time in logmessage
-				if (strlen(LogStr) > 0)
+				char *pfound = strstr(LogStr, "TESTOPROEP HOOFDSYSTEEM");
+				if (pfound != NULL)
 				{
-					char *pfound = strstr(LogStr, "TESTOPROEP HOOFDSYSTEEM");
-					if (pfound != NULL)
+					LastTestOproepTime = current_Timestamp();
+					NextTestOproepTime = LastTestOproepTime + MAX_TIME_BETWEEN_TESTOPROEPEN * 1000;
+
+					// find date and time in logmessage
+					if (ChangeSystemTime == true)
 					{
 						char *pfound = strstr(LogStr, ")");
 						if (pfound != NULL)
@@ -280,11 +265,13 @@ int main(int argc, char **argv)
 							printf("System date/time set.\n");
 						}
 						SystemDateTimeUpdated = true;
-						Next_System_Time_Check = current_Timestamp() + (CHECK_SYSTEM_TIME_WINDOW * 60000);
+						Next_System_Time_Check = current_Timestamp() + (UpdateSystemTimeWindow * 60000);
 						ChangeSystemTime = false;
+						ValidDateTime = true;
 					}
 				}
 			}
+
 
 			if (output_to_terminal == true)
 			{
@@ -292,13 +279,47 @@ int main(int argc, char **argv)
 			}
 			if (SystemDateTimeUpdated == true)
 			{
-				log_message(LogStr, false);
+				log_message(LogStr, !ValidDateTime);
 			}
 			else
 			{
-				log_message(LogStr, true);
+				log_message(LogStr, !ValidDateTime);
 			}
 		}
+
+		// Check if no testoproep is missed
+		currentTime = current_Timestamp();
+		if ((NextTestOproepTime > 0) && (currentTime >= NextTestOproepTime))
+		{
+			NrOfMissedTestCalls++;
+			if (LastTestOproepTime > 0)
+			{
+				sprintf(LogStr, "***** Error: Missed a Test call, Last one received: %lld s ago! Total # of Test calls missed = %lld *****", (currentTime - LastTestOproepTime) / 1000, NrOfMissedTestCalls);
+				log_message(LogStr, !ValidDateTime);
+
+				sprintf(LogStr, "Error: Missed a Test call, Last one received: %lld s ago! Total # of Test calls missed = %lld", (currentTime- LastTestOproepTime) / 1000, NrOfMissedTestCalls);
+				log_error_message(LogStr, !ValidDateTime);
+				if (output_to_terminal == true)
+				{
+					printf("%s\n", LogStr);
+				}
+			}
+			else
+			{
+				sprintf(LogStr, "***** Error: No Test call received since start of program: %lld s ago! Total # of Test calls missed = %lld *****", (currentTime - StartOfProgramTime) / 1000, NrOfMissedTestCalls);
+				log_message(LogStr, !ValidDateTime);
+
+				sprintf(LogStr, "Error: No Test call received since start of program: %lld s ago!  Total # of Test calls missed = %lld", (currentTime - LastTestOproepTime) / 1000, NrOfMissedTestCalls);
+				log_error_message(LogStr, !ValidDateTime);
+				if (output_to_terminal == true)
+				{
+					printf("%s\n", LogStr);
+				}
+
+			}
+			NextTestOproepTime = NextTestOproepTime + 300000; // + 5 min. = 300000 ms
+		}
+
 		if (ChangeSystemTime == false)
 		{
 			if (current_Timestamp() >= Next_System_Time_Check)
@@ -308,7 +329,7 @@ int main(int argc, char **argv)
 		}
 		if (current_Timestamp() >= next_voltage_sample)
 		{
-			next_voltage_sample = current_Timestamp() + VOLTAGE_SAMPLE_WINDOW * 1000;
+			next_voltage_sample = current_Timestamp() + SampleVoltageWindow * 1000;
 			// the correction factor 1.279762 is needed because a 4k7 resistor is placed in the input lead (the ADC input internally has a 10K and a 16K8 in series
 			current_voltage_level = 1.279762 * read_voltage(0x68, 1, 18, 1, 1); // read from adc chip 1, channel 1, 18 bit, pga gain set to 1 and continuous conversion mode
 
@@ -327,14 +348,14 @@ int main(int argc, char **argv)
 			{
 				max_voltage_level = current_voltage_level;
 			}
-			if (current_voltage_level < MINIMUM_VOLTAGE_LEVEL)
+			if (current_voltage_level < VoltageMinimumLevel)
 			{
 				if (VoltageLevelError == false)
 				{
-					sprintf(LogStr, "***** Error: Pager voltage = %G V (this is below the limit of %G V) *****", current_voltage_level, MINIMUM_VOLTAGE_LEVEL);
-					log_message(LogStr, false);
-					sprintf(LogStr, "Error: Pager voltage = %G V (this is below the limit of %G V)", current_voltage_level, MINIMUM_VOLTAGE_LEVEL);
-					log_error_message(LogStr, false);
+					sprintf(LogStr, "***** Error: Pager voltage = %G V (this is below the limit of %G V) *****", current_voltage_level, VoltageMinimumLevel);
+					log_message(LogStr, !ValidDateTime);
+					sprintf(LogStr, "Error: Pager voltage = %G V (this is below the limit of %G V)", current_voltage_level, VoltageMinimumLevel);
+					log_error_message(LogStr, !ValidDateTime);
 					if (output_to_terminal == true)
 					{
 						printf("%s\n", LogStr);
@@ -346,10 +367,10 @@ int main(int argc, char **argv)
 			{
 				if (VoltageLevelError == true)
 				{
-					sprintf(LogStr, "***** Solved: Pager voltage = %G V (this is at or above the limit of %G V) *****", current_voltage_level, MINIMUM_VOLTAGE_LEVEL);
-					log_message(LogStr, false);
-					sprintf(LogStr, "Solved: Pager voltage = %G V (this is at or above the limit of %G V)", current_voltage_level, MINIMUM_VOLTAGE_LEVEL);
-					log_error_message(LogStr, false);
+					sprintf(LogStr, "***** Solved: Pager voltage = %G V (this is at or above the limit of %G V) *****", current_voltage_level, VoltageMinimumLevel);
+					log_message(LogStr, !ValidDateTime);
+					sprintf(LogStr, "Solved: Pager voltage = %G V (this is at or above the limit of %G V)", current_voltage_level, VoltageMinimumLevel);
+					log_error_message(LogStr, !ValidDateTime);
 					if (output_to_terminal == true)
 					{
 						printf("%s\n", LogStr);
@@ -361,28 +382,16 @@ int main(int argc, char **argv)
 
 		if (current_Timestamp() > Next_Voltage_Report_Time)
 		{
-			Next_Voltage_Report_Time = current_Timestamp() + VOLTAGE_REPORT_WINDOW * 1000;
-			sprintf(LogStr, "***** Current voltage level pager: %G V *****", current_voltage_level);
-			log_message(LogStr, false);
-			if (output_to_terminal == true)
-			{
-				printf("%s\n", LogStr);
-			}
+			Next_Voltage_Report_Time = current_Timestamp() + ReportVoltageWindow * 1000;
 			if (min_voltage_level < 100)
 			{
-				sprintf(LogStr, "***** Minimum voltage level pager: %G V *****", min_voltage_level);
+				sprintf(LogStr, "***** Pager voltage: %GV%c[min. = %GV; max. = %GV] *****", current_voltage_level, 9, min_voltage_level, max_voltage_level);
 			}
 			else
 			{
-				sprintf(LogStr, "***** Minimum voltage level detection waiting for first positive value measured *****");
+				sprintf(LogStr, "***** Pager voltage: %GV%c[min. = ------; max. = %GV] *****", current_voltage_level, 9, max_voltage_level);
 			}
-			log_message(LogStr, false);
-			if (output_to_terminal == true)
-			{
-				printf("%s\n", LogStr);
-			}
-			sprintf(LogStr, "***** Maximum voltage level pager: %G V *****", max_voltage_level);
-			log_message(LogStr, false);
+			log_message(LogStr, !ValidDateTime);
 			if (output_to_terminal == true)
 			{
 				printf("%s\n", LogStr);
@@ -391,21 +400,17 @@ int main(int argc, char **argv)
 
 		if (current_Timestamp() > Next_Voltage_Show_In_Term_Time)
 		{
-			Next_Voltage_Show_In_Term_Time = current_Timestamp() + VOLTAGE_SHOW_IN_TERM_WINDOW * 1000;
+			Next_Voltage_Show_In_Term_Time = current_Timestamp() + ShowVoltageInTermWindow * 1000;
 			if (output_to_terminal == true)
 			{
-				printf("------------\n");
-				printf("Current voltage level pager: %G V\n", current_voltage_level);
 				if (min_voltage_level < 100)
 				{
-					printf("Minimum voltage level pager: %G V\n", min_voltage_level);
+					printf("Pager voltage: %GV%c[min. = %GV; max. = %GV]\n", current_voltage_level, 9, min_voltage_level, max_voltage_level);
 				}
 				else
 				{
-					printf("Minimum voltage level detection waiting for first positive value measured\n");
+					printf("Pager voltage: %GV%c[min. = ------; max. = %GV]\n", current_voltage_level, 9, max_voltage_level);
 				}
-				printf("Maximum voltage level pager: %G V\n", max_voltage_level);
-				printf("------------\n");
 			}
 		}
 	}

@@ -15,13 +15,11 @@
 #define LOGDIR "/mnt/usb/logfiles/"
 #define ERRORLOGDIR "/mnt/usb/errorlogs/"
 
+extern bool output_to_terminal;
+
 extern void log_message(char *amessage, bool disableDateTime);
 
 extern void log_error_message(char *amessage, bool disableDateTime);
-
-extern bool logging_available(void);
-
-extern bool error_logging_available(void);
 
 extern void debug_log(char *amessage);
 
