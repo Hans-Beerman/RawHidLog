@@ -141,6 +141,26 @@ int main(int argc, char **argv)
 	while (program_is_running == true)
 	{
 		usleep(100);
+
+		USBStick_Check();
+/*
+		if (USBStick_Check() == true)
+		{
+		 	 if (USBStickError == true)
+		 	 {
+		 		 USBStickError = false;
+		 		 if (output_to_terminal == true)
+		 		 {
+		 			printf("USB stick available again|\n");
+		 		 }
+		 		 log_message(USBStickErrorMessage, !ValidDateTime);
+		 		 log_error_message(USBStickErrorMessage, !ValidDateTime);
+		 		 log_message("USB stick available again!", !ValidDateTime);
+		 		 log_error_message("USB stick available again!", !ValidDateTime);
+		 	 }
+		}
+*/
+
 		if (stat("/dev/hidraw0", &USBHIDstat) < 0)
 		{
 			log_message("***** Error: USB connection lost! *****", !ValidDateTime);

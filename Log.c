@@ -97,12 +97,16 @@
  ******************************************************************************
  */
 bool output_to_terminal = false;
+bool USBStickError = false;
+char USBStickErrorMessage[256];
 
 /*
  ******************************************************************************
  * Routine prototypes
  ******************************************************************************
  */
+
+bool USBStick_Check(void);
 
 void log_message(char *amessage, bool disableDateTime);
 
@@ -119,6 +123,70 @@ void debug_log(char *amessage);
 
 bool log_created = false;
 bool error_log_created = false;
+
+/**
+ ******************************************************************************
+ * \brief		  USB_Check verifies if USB stick is available
+ * \details
+ * \param[in]   - none
+ * \param[out]  - none
+ * \return      - bool true if USB stick is available
+ * \pre         -
+ * \post        -
+ * \attention   - Logfiles of 31 days or more ago are deleted
+ ******************************************************************************
+ */
+
+bool USBStick_Check(void)
+{
+	 time_t curtime;
+	 struct tm *loctime;
+	 int i;
+	 char current_time_date[256];
+	 struct stat USBSDA1stat;
+
+	 if ((USBStickError == true) && (stat("/dev/sda1", &USBSDA1stat) < 0))
+	 {
+		 return false;
+	 }
+
+	 if (stat("/dev/sda1", &USBSDA1stat) < 0)
+	 {
+		 if (output_to_terminal == true)
+		 {
+			printf("Error: No USB stick found, please insert the USB stick!\n");
+		 }
+		 if (USBStickError == false)
+		 {
+			 USBStickError = true;
+			 curtime = time (NULL);
+
+			 /* Convert it to local time representation. */
+			 loctime = localtime (&curtime);
+
+ 			 sprintf(current_time_date, "%4d-%2d-%2d%s%2d:%2d:%2d", loctime->tm_year + 1900, loctime->tm_mon + 1, loctime->tm_mday, "|||" , loctime->tm_hour, loctime->tm_min, loctime->tm_sec);
+
+			 for (i = 0; i < strlen(current_time_date); i++)
+			 {
+				 if (current_time_date[i] == ' ')
+				 {
+					 current_time_date[i] = '0';
+				 }
+				 else
+				 {
+					 if (current_time_date[i] == '|')
+					 {
+						 current_time_date[i] = ' ';
+					 }
+				 }
+			 }
+			 sprintf(USBStickErrorMessage, "USB stick removed, noticed: %s", current_time_date);
+		 }
+		 return false;
+	 }
+	 return true;
+}
+
 
 /**
  ******************************************************************************
@@ -146,18 +214,27 @@ bool error_log_created = false;
 	 char current_time_date[256];
 	 char mesout[1024];
 	 int i;
- 	 struct stat USBSDA1stat;
 
- 	 if (stat("/dev/sda1", &USBSDA1stat) < 0)
+ 	 if (USBStick_Check() == false)
  	 {
- 		 if (output_to_terminal == true)
- 		 {
- 			printf("Error: No USB stick found, please insert!\n");
- 		 }
- 		 log_created = false;
- 		 return;
+ 		log_created = false;
+ 		return;
  	 }
 
+ 	 if (USBStickError == true)
+ 	 {
+ 		 usleep(20000);
+ 		 USBStickError = false;
+ 		 if (output_to_terminal == true)
+ 		 {
+ 			printf("USB stick available again|\n");
+ 		 }
+
+ 		 log_message(USBStickErrorMessage, !ValidDateTime);
+ 		 log_error_message(USBStickErrorMessage, !ValidDateTime);
+ 		 log_message("USB stick available again!", !ValidDateTime);
+ 		 log_error_message("USB stick available again!", !ValidDateTime);
+ 	 }
 	 /* Get the current time. */
 	 curtime = time (NULL);
 
@@ -254,17 +331,25 @@ bool error_log_created = false;
  	 char current_time_date[256];
  	 char mesout[1024];
  	 int i;
- 	 struct stat USBSDA1stat;
 
-
- 	 if (stat("/dev/sda1", &USBSDA1stat) < 0)
+ 	 if (USBStick_Check() == false)
  	 {
+ 		log_created = false;
+ 		return;
+ 	 }
+
+ 	 if (USBStickError == true)
+ 	 {
+ 		 usleep(20000);
+ 		 USBStickError = false;
  		 if (output_to_terminal == true)
  		 {
- 			printf("Error: No USB stick found, please insert!\n");
+ 			printf("USB stick available again|\n");
  		 }
- 		 error_log_created = false;
- 		 return;
+ 		 log_message(USBStickErrorMessage, !ValidDateTime);
+ 		 log_error_message(USBStickErrorMessage, !ValidDateTime);
+ 		 log_message("USB stick available again!", !ValidDateTime);
+ 		 log_error_message("USB stick available again!", !ValidDateTime);
  	 }
 
  	 /* Get the current time. */

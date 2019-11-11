@@ -517,10 +517,50 @@ void load_params()
 	read_params_file();
 
 	UpdateSystemTimeWindow = read_long_long_param("UpdateSystemTimeWindow", CHECK_SYSTEM_TIME_WINDOW); // in minutes
+	if (UpdateSystemTimeWindow < 60)
+	{
+		UpdateSystemTimeWindow = 60;
+	}
+	if (UpdateSystemTimeWindow > 1440)
+	{
+		UpdateSystemTimeWindow = 1440;
+	}
 	SampleVoltageWindow = read_long_long_param("SampleVoltageWindow", VOLTAGE_SAMPLE_WINDOW); // in secs
+	if (SampleVoltageWindow < 2)
+	{
+		SampleVoltageWindow = 2;
+	}
+	if (SampleVoltageWindow > 60)
+	{
+		SampleVoltageWindow = 60;
+	}
 	ReportVoltageWindow = read_long_long_param("ReportVoltageWindow", VOLTAGE_REPORT_WINDOW); // in secs
+	if (ReportVoltageWindow < 10)
+	{
+		ReportVoltageWindow = 10;
+	}
+	if (ReportVoltageWindow > 1200)
+	{
+		ReportVoltageWindow = 1200;
+	}
 	ShowVoltageInTermWindow = read_long_long_param("ShowVoltageInTermWindow", VOLTAGE_SHOW_IN_TERM_WINDOW); // in secs
+	if (ShowVoltageInTermWindow < 1)
+	{
+		ShowVoltageInTermWindow = 1;
+	}
+	if (ShowVoltageInTermWindow > 1200)
+	{
+		ShowVoltageInTermWindow = 1200;
+	}
 	VoltageMinimumLevel = read_double_param("double VoltageMinimumLevel", MINIMUM_VOLTAGE_LEVEL); // in V
+	if (VoltageMinimumLevel < 2.0)
+	{
+		VoltageMinimumLevel = 2.0;
+	}
+	if (VoltageMinimumLevel > 5.0)
+	{
+		VoltageMinimumLevel = 5.0;
+	}
 }
 
 
